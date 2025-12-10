@@ -1,7 +1,7 @@
 # 🏭 Quant Feature Pipeline | 量化交易特征制造流水线
 
 <p align="center">
-  <b>从原始K线到RL训练特征的工业级流水线</b><br>
+  <b>从原始K线到RL训练特征(DL完全可用)的工业级流水线</b><br>
   <i>Industrial-grade pipeline: Raw K-line → RL-ready Features</i>
 </p>
 
