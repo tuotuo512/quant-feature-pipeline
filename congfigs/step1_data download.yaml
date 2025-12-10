@@ -1,0 +1,82 @@
+# ========================================
+# Step1: 数据下载配置
+# 用途: 控制原始K线数据下载（训练+实盘共用）
+# ========================================
+
+# 交易品种（从 main_config 继承）
+symbol:
+  trading_pair: "{symbol.trading_pair_exchange}"
+  market_type: "{symbol.market_type}"
+
+# 时间范围配置  ⭐⭐⭐⭐
+time_range:
+  mode: "incremental"  # incremental(增量) | full(全量) | days(最近N天) | custom(自定义)
+  
+  incremental:
+    days_if_missing: 200              # 本地无文件时，初次抓取天数
+    fill_missing: true                # 是否补齐缺失K线
+    initial_start: "2025-01-31-16-00" # 初始起点（仅本地无文件时生效）
+  
+  full:
+    years_of_data: 2
+  
+  days:
+    recent_days: 90
+  
+  custom:
+    start_date: "2024-01-01"
+    end_date: "2025-10-22"
+
+# 时间周期（从 main_config 继承）
+timeframes:
+  target: "{timeframes.base_download}"
+
+# 数据获取策略（已优化到最佳速度）
+fetch_strategy:
+  retry_count: 5        # 失败重试次数
+  batch_size: 1000      # 每批获取K线数量（Binance最大1000，OKX最大300）
+  delay_ms: 100         # 请求间隔(毫秒) - 已优化到安全最小值
+  timeout_ms: 6000      # 请求超时(毫秒)
+  
+  # 速度说明：
+  # - Binance: 1000根/次，100ms延迟 = 10次/秒 = 36000根/分钟 ✅
+  # - OKX: 实际限制300根/次，100ms延迟 = 10次/秒 = 18000根/分钟 ✅
+  # - 更低延迟可能触发限流（HTTP 429）导致封禁
+
+# 网络配置
+network:
+  auto_detect: true   # 自动检测网络连通性
+  use_proxy: true
+  proxy_url: "http://127.0.0.1:18081"
+  
+  connectivity_check:
+    enabled: true
+    test_google: true
+    test_binance: true
+    strict_mode: false  # false=连接失败仍继续尝试
+
+# API认证（从环境变量读取）
+# Binance: BINANCE_API_KEY, BINANCE_API_SECRET
+# OKX: OKX_API_KEY, OKX_API_SECRET, OKX_API_PASSPHRASE
+api_auth:
+  use_env: true
+  require_auth: false  # false=公开数据模式（无需API密钥）
+
+# 输出配置（从 main_config 继承）
+output:
+  base_dir: "{io.downloads_dir}"
+  filename_pattern: "{io.filename_patterns.download}"
+  
+  quality_check:
+    remove_duplicates: true
+    fill_missing_values: true
+    check_completeness: true
+    add_time_features: true
+
+# 日志配置
+logging:
+  verbose: true
+  show_progress: true
+  progress_interval: 5
+  save_log: false
+  log_file: "data_download.log"

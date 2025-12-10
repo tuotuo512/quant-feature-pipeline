@@ -1,0 +1,147 @@
+version: 1
+# /root/FinRL_bn/features_engineering/congfigs/config_loader.py 通过它分发！！！
+project:
+  name: "finrl_bn"
+  mode: "offline"        # offline | backtest | live
+  timezone: "UTC"
+
+# ========== 交易所与交易对配置 ==========
+exchange:
+  name: "okx"                  # binance | okx
+  # 注：交易所选择影响API端点、认证方式等
+
+symbol:
+  # 🔥 重要：trading_pair_std 和 trading_pair_exchange 必须对应同一币种！
+  # trading_pair_std: 用于文件命名（下划线格式）
+  # trading_pair_exchange: 用于交易所API调用（斜杠格式）
+  trading_pair_std: "BTC_USDT"     # 文件命名统一下划线
+  trading_pair_exchange: "BTC/USDT" # 交易所接口使用斜杠
+  market_type: "swap"              # spot(现货) | swap(永续合约)
+  # 注：market_type 仅影响原始数据下载文件名（如 ETH_USDT_SWAP_1m.csv）
+  #     后续 Step2-5 处理时统一读取，不再区分 spot/swap
+  # 
+  # 🎯 切换币种示例：
+  #   ETH: trading_pair_std: "ETH_USDT", trading_pair_exchange: "ETH/USDT"
+  #   BTC: trading_pair_std: "BTC_USDT", trading_pair_exchange: "BTC/USDT"
+
+# 数据下载时间、方式
+time_range:
+  mode: "incremental"              # incremental（增量默认） | full（全量） | days（最近N天） | custom（自定义）
+  incremental:
+    days_if_missing: 200         # 本地无历史文件时,初次抓取天数
+    fill_missing: true
+    initial_start: null
+
+
+# ========== 核心：RL特征构建模式（唯一主开关）==========
+# fixed:   固定K线，收盘时跳变（训练默认，稳定可靠）
+
+rl_build:
+  source_mode: "fixed"
+
+
+# 全局统一周期
+# 合成周期  支持 2m  3m  10m  2h 等自定义
+timeframes:
+  base_download: "1m"
+  resample_targets: ["3m", "15m", "30m", "2h"]
+  # include_rolling 由 config_loader 自动推导，无需手动配置
+  # 填充链路（给电影胶片补帧,减少反复重算、保证连续性） 与IO.overwrite=false 配合使用
+  fill_missing_base: true          # 对step1基础下载CSV(ETH_USDT_SWAP_1m.csv)补齐网格
+  fill_kline_outputs: true         # 对Step2各周期K线输出补齐网格
+  fill_indicators: true            # 对Step3指标NaN填充
+  indicators_fill_method: "ffill"  # ffill|bfill|ffill_bfill
+  fill_merged: true                # 对Step4 merged文件NaN填充  训练用建议 fill_merged: true
+  merged_fill_method: "ffill"      # ffill|bfill|ffill_bfill
+
+# 全局统一保存路径
+io:
+  base_dir: "/root/FinRL_bn/data"
+  downloads_dir: "{io.base_dir}/rl_live/data_downloads"
+  kline_dir: "{io.base_dir}/rl_live/kline"
+  indicators_dir: "{io.base_dir}/rl_live/ind"
+  merged_dir: "{io.base_dir}/rl_live/merged"
+  rl_ready_dir: "{io.base_dir}/rl_live/data_ready"
+  
+  # 统一文件命名规范（所有步骤遵循）
+  filename_patterns:
+    # Step1 下载: ETH_USDT_SWAP_1m.csv 或 ETH_USDT_SPOT_1m.csv
+    # 注：$timeframe$ 特殊标记防止被 ConfigLoader 提前替换，由 IOManager 运行时填充
+    download: "{symbol.trading_pair_std}_{market_type}_$timeframe$.csv"
+    
+    # Step2 K线: ETH_USDT_3m.parquet / ETH_USDT_3m_roll.parquet
+    kline: "{symbol.trading_pair_std}_$timeframe$.parquet"
+    kline_roll: "{symbol.trading_pair_std}_$timeframe$_roll.parquet"
+    
+    # Step3 指标: ETH_USDT_3m_indicators.parquet
+    indicator: "{symbol.trading_pair_std}_$timeframe$_indicators.parquet"
+    
+    # Step4 融合: ETH_USDT_1m_features.csv（base_download 作为 timeframe）
+    merged: "{symbol.trading_pair_std}_$timeframe$_merged.parquet"
+    
+    # Step5 RL: .npz
+    rl: "{symbol.trading_pair_std}_rl.npz"
+    rl_features: "{symbol.trading_pair_std}_$timeframe$_rl_features.npz"
+    rl_labels: "{symbol.trading_pair_std}_$timeframe$_rl_labels.npz"
+  
+  # 🔥 output_format控制范围: Step2(kline/) + Step3(ind/) + Step4(merged/)
+  # Step5只读取merged/，自动优先Parquet (快24倍!)，输出固定为NPZ
+  output_format: "parquet"   # csv | parquet | both
+                             # - parquet: 速度快24倍+节省58%空间 (推荐) ⭐
+                             # - csv: 通用兼容性好
+                             # - both: 两种都生成 (调试用)
+  
+  overwrite: false           # Step2/3/4是否覆盖已存在文件   
+                             # - false: 跳过已存在 (增量更新，快) ⭐⭐⭐
+                             # - true: 强制重新生成 (完整重算) 全量！！非常慢！！⚠️⚠️⚠️
+
+# 指标配置（全局启用列表，细节参数见 base_indicators.yaml）
+indicators:
+  enabled: ["moving_averages", "supertrend", "momentum", "rsi", "macd", "bollinger_bands", "atr", "volatility"]
+
+merge:
+  include_base_ohlcv: true
+  align_direction: "backward"
+  allow_exact_match: true
+  add_timeframe_prefix: true
+  
+  enable_real_sliding: true                    # 是否启用真滑窗计算
+  real_sliding_indicators: ["mom"]             # 需要真滑窗的指标列表
+  real_sliding_window: 14                      # 默认动量窗口（如列名无窗口数字时使用）
+  # 说明：
+  #   - 真滑窗用基础周期(如3m)的close，重算大周期(如15m/30m)的动量
+  #   - 效果：动量不再阶跃跳变，而是平滑过渡
+  #   - 例如：15m_mom 不再是4根3m填充同值，而是每根3m重算一次
+
+online:
+  enabled: false
+  source: "okx"    # binance | okx
+  poll_interval_ms: 1000
+  microbatch:
+    length: 2000
+    align_to: "1m"
+
+logging:
+  verbose: true
+  level: "INFO"
+  save_log: true
+  log_dir: "{io.base_dir}/logs"
+
+validation:
+  enforce_strict_naming: true
+  timezone: "UTC"
+
+# ========== 收益率特征治理配置 ==========
+# 🔥 关键改进：在特征生成阶段就完成治理，确保训练/实盘一致
+return_feature:
+  enable_governance: true           # 是否启用收益率治理（默认启用）
+  winsorize_p_lo: 0.1              # Winsorize下分位数（0.1%）
+  winsorize_p_hi: 99.9             # Winsorize上分位数（99.9%）
+  tanh_scale_factor: 3.0           # Tanh缩放因子（3倍标准差）
+  # 说明：
+  #   1. Winsorize: 裁剪极端值到 [0.1%, 99.9%] 分位数
+  #   2. Tanh压缩: 将收益率压缩到 [-1, 1] 范围
+  #   3. 效果: 避免极端收益率影响模型训练
+  #   4. 训练/实盘: 使用相同配置，确保特征一致
+
+

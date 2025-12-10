@@ -1,0 +1,40 @@
+# ========================================
+# 🔌 Systemd Service - FinRL 每日数据更新外挂
+# 用途: 配合 Timer 实现定时任务（比 cron 更可靠）
+# 
+# 安装步骤:
+#   1. sudo cp finrl-daily-features.service /etc/systemd/system/
+#   2. sudo cp finrl-daily-features.timer /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable finrl-daily-features.timer
+#   5. sudo systemctl start finrl-daily-features.timer
+#
+# 查看状态:
+#   systemctl status finrl-daily-features.timer
+#   systemctl list-timers
+#   journalctl -u finrl-daily-features.service
+# ========================================
+
+[Unit]
+Description=FinRL Daily Features Update Plugin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/FinRL_bn
+Environment="PATH=/root/miniconda3/envs/finrl_ml_env/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/root/miniconda3/envs/finrl_ml_env/bin/python /root/FinRL_bn/features_engineering/auto_features_daily/run_daily_features.py --force
+StandardOutput=append:/root/FinRL_bn/logs/auto_features_daily/systemd.log
+StandardError=append:/root/FinRL_bn/logs/auto_features_daily/systemd_error.log
+
+# 超时设置（数据下载可能需要较长时间）
+TimeoutStartSec=3600
+
+# 失败重试
+Restart=on-failure
+RestartSec=300
+
+[Install]
+WantedBy=multi-user.target

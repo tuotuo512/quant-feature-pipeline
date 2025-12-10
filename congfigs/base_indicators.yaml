@@ -1,0 +1,51 @@
+# Step1: 指标基础参数（默认值）；用于 indicators.py 作为全局默认。
+moving_averages:
+  simple_ma_windows: [5, 10, 20, 50, 100, 200]
+  exponential_ma_windows: [7, 9, 12, 20, 26, 55, 100, 200]
+
+bollinger_bands:
+  window: 20
+  std_dev: 2.0
+
+momentum:
+  window: 14
+  method: "roc"  # 可选: roc/logret
+
+macd:
+  fast: 12
+  slow: 26
+  signal: 9
+
+rsi:
+  window: 12
+  # 🔥 新版阈值：RSI已改造为[-100, +100]范围，0为中性点
+  # 传统阈值70/30 → 新阈值+40/-40（转换：(70-50)*2, (30-50)*2）
+  overbought_threshold: 40   # 超买阈值（对应传统70）
+  oversold_threshold: -40    # 超卖阈值（对应传统30）
+  min_persist: 2             # 持续周期数（连续N根K线触发才有效）
+
+atr:
+  window: 14
+
+supertrend:
+  period: 10
+  multiplier: 3.0
+
+# 预留占位（当前未实现的底层函数可在实现后补参）
+volatility:
+  windows: [20, 50, 100]    # 生成 rv_win20/50/100 真实波动率（基于收益率的统计/平方和，默认20）
+  use_log_returns: true
+  scale: 1.0
+roc: {}
+stochastic: {}
+adx: {}
+volume_indicators: {}
+mfi: {}
+linear_deviation: {}
+momentum_features: {}
+mean_reversion_features: {}
+price_features: {}
+williams_r: {}
+cci: {}
+momentum_oscillator: {}
+ultimate_oscillator: {}

@@ -1,0 +1,159 @@
+# ========================================
+# Step5: RL特征标准化配置（极简版）
+# 路径/周期/source_mode 从 main_config.yaml 继承
+# 此处仅定义特征分组、标准化策略
+# ========================================
+
+# 自动识别配置（优先读取 main.rl_build.source_mode，此处为兜底）
+auto_detect:
+  periods: null       # null=自动提取全部周期，或白名单 ["3m", "15m", "1h"]
+  mode: "auto"        # 优先读取 main.rl_build.source_mode；若未提供则自动检测
+
+# ========== 特征分组（groups）==========
+# 按功能分组，便于 Transformer 理解特征维度
+groups:
+  market_state:
+    source: ["supertrend_direction"]  # 从这些指标推导
+    type: "classification"
+    num_classes: 2
+  
+  momentum:
+    source: ["mom"]
+    type: "regression"
+  
+  band_width:
+    source: ["bb_width"]
+    type: "regression"
+  
+  volume:
+    source: ["volume"]
+    type: "regression"
+  
+  volatility:
+    source: ["atr14", "atr14_pct", "rv20", "rv50", "rv100"]
+    type: "regression"
+  
+  rsi_features:
+    source: ["rsi14"]
+    type: "mixed"  # 连续值 + 事件标记
+  
+  time_encoding:
+    source: "timestamps"  # 从时间戳生成
+    type: "regression"
+  
+  price_base:
+    source: ["open", "high", "low", "close"]
+    periods: ["1m"]  # 只使用1m基准价格
+    type: "regression"
+
+# ========== 特征筛选（可选）==========
+filter:
+  enabled_groups: []     # 留空=全部，或指定白名单 ["momentum", "rsi_features", "volume"]
+  enabled_periods: []    # 留空=全部，或指定白名单 ["3m", "15m", "1h"]
+  whitelist_columns: []  # 精确列名白名单
+  blacklist_columns: []  # 精确列名黑名单
+
+# ========== 🏆🏆🏆 真滑窗配置 (Real Sliding Window) ==========
+# 🔥 核心思想: 用1m数据直接计算大周期指标，消除阶跃突变
+# 📌 配合 main_config.yaml 的 rl_build.source_mode 使用
+#    - source_mode: "fixed"   → 此配置不生效
+#    - source_mode: "sliding" → 根据下方配置执行真滑窗
+
+real_sliding:
+  # 🎯 适合真滑窗的指标（计算简单，基于shift或rolling）
+  enabled_indicators:
+    - "mom"             # ✅ 仅启用动量真滑窗（其余保持原始值）
+  
+  # 🚫 不适合真滑窗的指标（保持原始值）
+  # 这些指标涉及EMA/复杂统计，真滑窗成本太高：
+  #   - rsi14 (需要rolling的gain/loss统计)
+  #   - macd/macd_histogram (EMA指数加权)
+  #   - atr14_pct (需要high/low/prev_close)
+  #   - supertrend_direction (复杂逻辑)
+  
+  # 🏆 启用的周期（小周期不需要真滑窗）
+  target_periods: ["3m", "15m", "30m", "2h"]
+  
+  # 🔧 高级选项（仅与数据充足性/缺失填充相关）
+  options:
+    min_data_points: 1    # 最少需要多少根历史数据才计算（防止冷启动NaN）
+    fill_method: "ffill"  # 不足数据时的填充方式
+
+# ========== 标准化策略（核心）==========
+normalization:
+  momentum:
+    mode: rolling_zscore  # 🔥 滚动Z-score + robust归一化（保留信息丰富的动量信号）
+    norm_method: robust_zscore  # 使用鲁棒Z-score（基于中位数和MAD，对极值不敏感）
+    # ⚙️ 动量回溯窗口（与Step3动量窗口保持逻辑一致，由此处负责控制）
+    default_mom_window: 14  # 对应“当前价格相对N期前”的N
+    # 🔎 参考价格的取值方式
+    #   point:       简单ROC（当前 close / N 期前 close - 1）
+    #   interval_avg: 区间均价对比
+    #   kline_close:  使用基础K线周期的收盘价
+    momentum_ref_method: "point"
+    zscore_window: 100  # 滚动Z-score窗口（基准周期）
+    use_period_multipliers_for_zscore: false  # 不按周期倍数放大窗口（保持统一）
+    # 鲁棒归一化参数（核心：防止极值压扁信号）
+    robust_k: 1.4826  # MAD到标准差的换算系数（1.4826使MAD等价于正态分布的σ）
+    robust_tanh_scale: 1.0  # Tanh压缩的平滑系数（越小越陡峭）
+    post_gain: 2.0  # 后处理增益（放大信号幅度）
+    # 最终裁剪到[-1, 1]，保证数值稳定性
+  
+  band_width:
+    mode: fused_rank_smooth
+    fast_window: 25
+    slow_window: 100
+  
+  volume:
+    mode: rank
+    rank_window: 100
+  
+  volatility:
+    mode: fused_rank
+    fast_window: 25
+    slow_window: 100
+  
+  rsi:
+    mode: linear          # 归一到 [-1, 1]（新版：RSI范围为-100到+100）
+    min_persist: 2        # 事件触发最小连续根数
+    # 🔥 新版阈值：对称设计，适配[-100, +100]范围
+    # 传统阈值70/30 → 新阈值+40/-40（转换公式：(70-50)*2=40, (30-50)*2=-40）
+    upper_threshold: 40.0   # 超买阈值（对应传统70）
+    lower_threshold: -40.0  # 超卖阈值（对应传统30）
+    # 🚀 归一化缩放系数（SAC优化：放大信号分辨率）
+    # 原理：RSI实际很少超过±80，使用80作为分母可以让常用区间[-60,+60]
+    #      充分利用[-1,1]空间，提升SAC对趋势强弱的敏感度
+    # 效果：+80 → 1.0, +60 → 0.75（原0.6），信号放大25%
+    normalization_divisor: 80.0  # 归一化分母（默认100，推荐75-85）
+
+# ========== ATR持久化归一化（训练/实盘一致） ==========
+atr:
+  fast_base: 25
+  slow_base: 100
+  fuse_w_fast: 0.6
+  fuse_w_slow: 0.4
+  shrink_epsilon: 0.03
+  calibration:
+    p: 0.95
+    target: 0.99
+    fixed_quantile: null    # 默认不使用全局固定值
+    fixed_gamma: null       # 全局兜底
+    per_period:
+      "3m":
+        fixed_gamma: 0.6231
+        fixed_quantile: 0.9840
+      "15m":
+        fixed_gamma: 0.4282
+        fixed_quantile: 0.9768
+      "30m":
+        fixed_gamma: 0.5239
+        fixed_quantile: 0.9810
+      "2h":
+        fixed_gamma: 0.3578
+        fixed_quantile: 0.9723
+
+# ========== 输出配置 ==========
+output:
+  save_config: true
+  save_metadata: true
+  validate: true

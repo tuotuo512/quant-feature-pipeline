@@ -1,0 +1,77 @@
+# ========================================
+# 🔌 每日自动更新外挂 - 独立配置
+# 用途: cron/systemd 定时任务 + 开机自动运行
+# 位置: features_engineering/auto_features_daily/config.yaml
+# ========================================
+
+# 调度配置
+schedule:
+  # UTC 时间（北京时间 -8 小时）
+  # 00:10 UTC = 08:10 北京时间
+  daily_time_utc: "00:10"
+  
+  # 是否开机自动运行（配合 systemd/cron @reboot）
+  run_on_boot: true
+  
+  # 运行前等待秒数（开机后等待网络就绪）
+  boot_delay_sec: 30
+
+# 下载参数
+download:
+  # 每次下载最近多少天（增量模式会自动跳过已有数据）
+  days: 280
+  
+  # 基础时间周期
+  base_tf: "1m"
+  
+  # 失败重试次数
+  max_retries: 3
+  
+  # 品种间隔秒数（避免触发限流）
+  symbol_delay_sec: 5
+
+# 🔥 多币种配置（核心）
+# 每个币种独立下载，文件名自动区分
+symbols:
+  - name: "ETH_USDT"
+    exchange_pair: "ETH/USDT"      # 交易所 API 格式
+    enabled: true
+    
+  - name: "BTC_USDT"
+    exchange_pair: "BTC/USDT"
+    enabled: true
+    
+  # 可按需添加更多币种
+  # - name: "SOL_USDT"
+  #   exchange_pair: "SOL/USDT"
+  #   enabled: false
+
+# 交易所配置
+exchange:
+  name: "okx"                      # binance | okx
+  market_type: "swap"              # spot | swap
+
+# 网络配置
+network:
+  # 自动检测代理（本地/云端自适应）
+  auto_detect_proxy: true
+  
+  # 云端环境标识（自动检测）
+  cloud_env_auto: true
+
+# 输出配置
+output:
+  # 日志目录（相对于项目根目录）
+  log_dir: "logs/auto_features_daily"
+  
+  # 是否保存每次运行日志
+  save_log: true
+  
+  # 日志保留天数
+  log_retention_days: 30
+
+# 通知配置（可选）
+notification:
+  enabled: false
+  dingtalk_webhook: ""
+

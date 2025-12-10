@@ -1,0 +1,38 @@
+# ========================================
+# 🔌 Systemd Timer - FinRL 每日数据更新外挂
+# 用途: 定时触发 finrl-daily-features.service
+# 
+# 时间说明:
+#   OnCalendar=*-*-* 00:10:00 UTC
+#   即每日 00:10 UTC（北京时间 08:10）
+#
+# 安装步骤:
+#   1. sudo cp finrl-daily-features.service /etc/systemd/system/
+#   2. sudo cp finrl-daily-features.timer /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable finrl-daily-features.timer
+#   5. sudo systemctl start finrl-daily-features.timer
+#
+# 查看状态:
+#   systemctl status finrl-daily-features.timer
+#   systemctl list-timers --all
+# ========================================
+
+[Unit]
+Description=FinRL Daily Features Update Timer (Plugin)
+
+[Timer]
+# 每日 00:10 UTC 运行
+OnCalendar=*-*-* 00:10:00 UTC
+
+# 开机后 2 分钟也运行一次（补偿错过的定时）
+OnBootSec=2min
+
+# 如果错过了定时，立即运行
+Persistent=true
+
+# 随机延迟（避免多实例同时运行）
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
